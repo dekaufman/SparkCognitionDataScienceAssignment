@@ -5,12 +5,62 @@ output: html_notebook
 
 ```{r setup}
 library(tidyverse)
+library(gridExtra)
 setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitionDataScienceAssignment')
 ```
 
-# Ingestion
+# Ingest training data
 ```{r}
+df_train <- read_csv('marketing_training.csv')
+dim(df_train)
 ```
+# Generate descriptive statistics on individual features
+Separate the features into categorical and numeric, for separate descriptive methods
+```{r}
+df_train_numeric <- df_train %>% select_if(is.numeric)
+df_train_categ <- df_train %>% select_if(is.character)
+```
+
+Summarize categorical variables
+```{r}
+# Make tidy
+df_cat_tidy <- df_train_categ %>% 
+  gather('feature', 'value', 1:11)
+# Count values
+df_cat_dists <- df_cat_tidy %>% 
+  group_by(feature, value) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  arrange(feature, desc(count))
+# Compute distributions
+df_cat_dists <- df_cat_dists %>% 
+  group_by(feature) %>% 
+  mutate(share = count / sum(count))
+```
+
+Visualize categorical variables
+```{r fig.width=10, fig.height=10}
+fn_make_hist <- function(var_name, data_frame) {
+  df_current_col <- data_frame %>% filter(feature == var_name)
+  graph <- ggplot(data = df_current_col, 
+                   aes(x = reorder(value, -share), y = share)) +
+    geom_col() +
+    stat_identity(geom="text", aes(label=count), vjust=-0.5, size = 3) +
+    labs(x = var_name) +
+    coord_cartesian(ylim = c(0, 1))
+  if (nrow(df_current_col) > 4) {
+    graph <- graph + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  } 
+  return(graph)
+}
+
+l_histograms <- lapply(colnames(df_train_categ), fn_make_hist, data_frame = df_cat_dists)
+
+# Assemble set of histograms
+grid.arrange(grobs = l_histograms, nrow = 4)
+
+```
+
 
 # Appendix:  Reproducibility
 ```{r}
