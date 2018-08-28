@@ -4,8 +4,11 @@ output: html_notebook
 ---
 
 ```{r setup}
+knitr::opts_chunk$set(warning = TRUE)
 library(tidyverse)
 library(gridExtra)
+library(knitr)
+library(kableExtra)
 setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitionDataScienceAssignment')
 ```
 
@@ -61,7 +64,7 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 ```
 
 Descriptive stats for numerical variables
-```{r warning=FALSE, paged.print=FALSE}
+```{r warning=FALSE, rows.print = 25, results = 'asis'}
 # Source:  https://stackoverflow.com/a/34594642
 
 # Compute quantiles, etc.
@@ -88,7 +91,8 @@ df_train_numer_stats <- df_train_numer_stats %>%
   spread(stat, val) %>%
   select(var, min, q25, median, q75, max, mean, sd, numNA) # reorder columns
 
-df_train_numer_stats
+# Pretty table printing; cf. http://haozhu233.github.io/kableExtra/awesome_table_in_html.html
+kable(as.data.frame(df_train_numer_stats), digits = c(0, 1, 1, 1, 1, 1, 1, 1, 0)) %>% kable_styling()
 ```
 
 Visualize numerical variables:  violin plots, marked with quartiles
@@ -110,6 +114,9 @@ l_histograms <- lapply(colnames(df_train_numeric), fn_make_violin, data_frame = 
 # # Assemble set of histograms
 grid.arrange(grobs = l_histograms, nrow = 4)
 ```
+
+TODO:  multivariate visualizations, correlations
+
 
 
 
