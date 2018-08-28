@@ -61,27 +61,32 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 ```
 
 Descriptive stats for numerical variables
-```{r}
+```{r warning=FALSE, paged.print=FALSE}
 # Source:  https://stackoverflow.com/a/34594642
 
-# Compute quantiles
+# Compute quantiles, etc.
 df_train_numer_stats <- df_train_numeric %>%
-  # select(mpg, cyl, vs, am, gear, carb) %>% # select variables to summarise
   summarise_all(funs(min = min, 
-                      q25 = quantile(., 0.25), 
-                      median = median, 
-                      q75 = quantile(., 0.75), 
-                      max = max,
-                      mean = mean, 
-                      sd = sd), 
+                     q25 = quantile(., 0.25), 
+                     median = median, 
+                     q75 = quantile(., 0.75), 
+                     max = max,
+                     mean = mean, 
+                     sd = sd), 
                  na.rm = TRUE)
+
+# Count NAs by column
+df_train_numer_num_na <- df_train_numeric %>%
+  summarise_all(funs(numNA = sum(is.na(.))))
+
+df_train_numer_stats <- df_train_numer_stats %>% bind_cols(df_train_numer_num_na)
 
 # Reshape back to tidy format
 df_train_numer_stats <- df_train_numer_stats %>% 
   gather(stat, val) %>%
   separate(stat, into = c("var", "stat"), sep = "_") %>%
   spread(stat, val) %>%
-  select(var, min, q25, median, q75, max, mean, sd) # reorder columns
+  select(var, min, q25, median, q75, max, mean, sd, numNA) # reorder columns
 
 df_train_numer_stats
 ```
@@ -125,7 +130,7 @@ TODO:  Add git SHA here
 
 
 ```{r eval=FALSE, include=FALSE}
-Standard RStudio boilerplate:
+Standard R Notebook boilerplate inserted by RStudio:
   
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
 
