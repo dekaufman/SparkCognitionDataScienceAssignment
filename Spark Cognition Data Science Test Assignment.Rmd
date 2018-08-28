@@ -58,8 +58,54 @@ l_histograms <- lapply(colnames(df_train_categ), fn_make_hist, data_frame = df_c
 
 # Assemble set of histograms
 grid.arrange(grobs = l_histograms, nrow = 4)
-
 ```
+
+Descriptive stats for numerical variables
+```{r}
+# Source:  https://stackoverflow.com/a/34594642
+
+# Compute quantiles
+df_train_numer_stats <- df_train_numeric %>%
+  # select(mpg, cyl, vs, am, gear, carb) %>% # select variables to summarise
+  summarise_all(funs(min = min, 
+                      q25 = quantile(., 0.25), 
+                      median = median, 
+                      q75 = quantile(., 0.75), 
+                      max = max,
+                      mean = mean, 
+                      sd = sd), 
+                 na.rm = TRUE)
+
+# Reshape back to tidy format
+df_train_numer_stats <- df_train_numer_stats %>% 
+  gather(stat, val) %>%
+  separate(stat, into = c("var", "stat"), sep = "_") %>%
+  spread(stat, val) %>%
+  select(var, min, q25, median, q75, max, mean, sd) # reorder columns
+
+df_train_numer_stats
+```
+
+Visualize numerical variables:  violin plots, marked with quartiles
+```{r fig.width=10, fig.height=10}
+
+df_numer_tidy <- df_train_numeric %>% gather('feature', 'value')
+
+fn_make_violin <- function(var_name, data_frame) {
+  df_current_col <- data_frame %>% filter(feature == var_name)
+  graph <- ggplot(data = df_current_col, 
+                   aes(x = feature, y = value)) +
+    geom_violin(na.rm = TRUE, draw_quantiles = c(0.25, 0.5, 0.75)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  return(graph)
+}
+
+l_histograms <- lapply(colnames(df_train_numeric), fn_make_violin, data_frame = df_numer_tidy)
+
+# # Assemble set of histograms
+grid.arrange(grobs = l_histograms, nrow = 4)
+```
+
 
 
 # Appendix:  Reproducibility
