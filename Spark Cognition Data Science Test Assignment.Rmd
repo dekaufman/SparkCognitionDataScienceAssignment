@@ -3,8 +3,7 @@ title: "SparkCognition Data Science Test Project:  Targeting of Insurance Market
 output: html_notebook
 ---
 
-```{r setup}
-knitr::opts_chunk$set(warning = TRUE)
+```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(gridExtra)
 library(knitr)
@@ -12,19 +11,19 @@ library(kableExtra)
 setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitionDataScienceAssignment')
 ```
 
-# Ingest training data
-```{r}
+### Ingest training data and report dimensions
+```{r, message=FALSE, warning=FALSE}
 df_train <- read_csv('marketing_training.csv')
 dim(df_train)
 ```
-# Generate descriptive statistics on individual features
+## Generate descriptive statistics on individual features
 Separate the features into categorical and numeric, for separate descriptive methods
 ```{r}
 df_train_numeric <- df_train %>% select_if(is.numeric)
 df_train_categ <- df_train %>% select_if(is.character)
 ```
 
-Summarize categorical variables
+### Summarize categorical variables
 ```{r}
 # Make tidy
 df_cat_tidy <- df_train_categ %>% 
@@ -41,7 +40,7 @@ df_cat_dists <- df_cat_dists %>%
   mutate(share = count / sum(count))
 ```
 
-Visualize categorical variables
+### Visualize categorical variables
 ```{r fig.width=10, fig.height=10}
 fn_make_hist <- function(var_name, data_frame) {
   df_current_col <- data_frame %>% filter(feature == var_name)
@@ -63,7 +62,7 @@ l_histograms <- lapply(colnames(df_train_categ), fn_make_hist, data_frame = df_c
 grid.arrange(grobs = l_histograms, nrow = 4)
 ```
 
-Descriptive stats for numerical variables
+### Descriptive stats for numerical variables
 ```{r warning=FALSE, rows.print = 25, results = 'asis'}
 # Source:  https://stackoverflow.com/a/34594642
 
@@ -95,7 +94,7 @@ df_train_numer_stats <- df_train_numer_stats %>%
 kable(as.data.frame(df_train_numer_stats), digits = c(0, 1, 1, 1, 1, 1, 1, 1, 0)) %>% kable_styling()
 ```
 
-Visualize numerical variables:  violin plots, marked with quartiles
+### Visualize numerical variables:  violin plots, marked with quartiles
 ```{r fig.width=10, fig.height=10}
 
 df_numer_tidy <- df_train_numeric %>% gather('feature', 'value')
@@ -117,7 +116,7 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 
 TODO:  multivariate visualizations, correlations
 
-
+## Extent of missing data
 
 
 # Appendix:  Reproducibility
@@ -133,7 +132,8 @@ Sys.info()
 date()
 ```
 
-TODO:  Add git SHA here
+TODO:  add package versions
+TODO:  add git repo status
 
 
 ```{r eval=FALSE, include=FALSE}
