@@ -117,7 +117,28 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 TODO:  multivariate visualizations, correlations
 
 ## Extent of missing data
+Count NAs per column, listing only the columns that have at least one NA.
+```{r}
+# Count NAs per column; show only the columns with at least 1
+( df_incomplete <- df_train %>% summarise_all(funs(sum(is.na(.)))) %>% select_if(function(col) sum(col) > 0) )
+```
 
+Tabulate rows by how many NAs they contain.
+```{r}
+# List of columns with NAs
+l_cols_with_NAs <- colnames(df_incomplete)
+# Count NAs per row
+df_NA_per_row <- df_train %>% 
+  mutate_all(funs(ifelse(is.na(.), 1, 0))) %>% 
+  transmute(num_NA = rowSums(.))
+# Tabulate rows by how many NAs they contain
+table(df_NA_per_row)
+
+```
+
+Conclusion:  nearly half the records contain at least one NA, so discarding incomplete records would be an extreme measure likely to bias the predictive model severely.
+
+# Random Forest
 
 # Appendix:  Reproducibility
 ```{r}
