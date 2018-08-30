@@ -13,14 +13,17 @@ setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitio
 
 ### Ingest training data and report dimensions
 ```{r, message=FALSE, warning=FALSE}
-df_train <- read_csv('marketing_training.csv')
-dim(df_train)
+df_train_orig <- read_csv('marketing_training.csv')
+# %>% 
+#   mutate_if(is.character, as.factor) 
+
+dim(df_train_orig)
 ```
 ## Generate descriptive statistics on individual features
 Separate the features into categorical and numeric, for separate descriptive methods
 ```{r}
-df_train_numeric <- df_train %>% select_if(is.numeric)
-df_train_categ <- df_train %>% select_if(is.character)
+df_train_numeric <- df_train_orig %>% select_if(is.numeric)
+df_train_categ <- df_train_orig %>% select_if(is.character)
 ```
 
 ### Summarize categorical variables
@@ -162,7 +165,7 @@ table(df_train_categ$day_of_week, df_train_categ$profession) %>% mosaicplot()
 Count NAs per column, listing only the columns that have at least one NA.
 ```{r}
 # Count NAs per column; show only the columns with at least 1
-( df_incomplete <- df_train %>% summarise_all(funs(sum(is.na(.)))) %>% select_if(function(col) sum(col) > 0) )
+( df_incomplete <- df_train_orig %>% summarise_all(funs(sum(is.na(.)))) %>% select_if(function(col) sum(col) > 0) )
 ```
 
 Tabulate rows by how many NAs they contain.
@@ -170,7 +173,7 @@ Tabulate rows by how many NAs they contain.
 # List of columns with NAs
 l_cols_with_NAs <- colnames(df_incomplete)
 # Count NAs per row
-df_NA_per_row <- df_train %>% 
+df_NA_per_row <- df_train_orig %>% 
   mutate_all(funs(ifelse(is.na(.), 1, 0))) %>% 
   transmute(num_NA = rowSums(.))
 # Tabulate rows by how many NAs they contain
@@ -178,7 +181,82 @@ table(df_NA_per_row)
 
 ```
 
-Conclusion:  nearly half the records contain at least one NA, so discarding incomplete records would be an extreme measure likely to bias the predictive model severely.
+Conclusion:  nearly half the records contain at least one NA, so discarding incomplete records would be an extreme measure likely to bias the predictive model severely.  We will pursue other approaches.
+
+# Split the data
+Although the actual test data for this problem is found in a separate file, we also need to split the data for purposes of model selection.  We will split the "training" data into 70% for actual training and 30% for validation.
+```{r}
+library(caTools)
+set.seed(101)
+sample = sample.split(df_train_orig$responded, SplitRatio = 0.7)
+df_train <- subset(df_train_orig, sample == TRUE)
+df_validation <- subset(df_train_orig, sample == FALSE)
+
+```
+
+# Balance the sample
+```{r}
+library(unbalanced)
+
+#configure sampling parameters
+ubConf <- list(percOver=200, percUnder=200, k=2, perc=50, method="percPos", w=NULL)
+
+# Prepare dataset in form required by 'unbalanced' package -- preliminary replacement of missing data
+df_train_impute1 <- df_train %>% 
+  mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
+  mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge)) %>% 
+  mutate_if(is.character, as.factor)
+
+# Save factor level definitions
+df_factor_levels <- df_train_impute1 %>% slice(1)
+  
+# Convert factors to numeric (required by 'unbalanced' package)  
+df_train_impute1 <- df_train_impute1 %>% mutate_if(is.factor, as.numeric)
+
+results <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(), 
+                    "randomForest", positive = 2, ubConf=ubConf, ntree=50)
+print(results)
+
+# Subtract one from response because this library requires (0,1) response vars
+rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded), 
+                        Y = df_train_impute1$responded - 1)
+
+# Get column indices of categorical factors
+l_factor_names <- df_factor_levels %>% select_if(is.factor) %>% names() 
+l_factor_indices <- which(names(df_factor_levels) %in% l_factor_names)
+
+# Convert numeric factor levels back to actual factor data
+df_train_rebal <- rebal_result[['X']]
+for (i in l_factor_indices) {
+  # df_train_rebal <- df_train_rebal %>%
+  #   mutate(.[[i]] = levels(pull(df_factor_levels, i))[ .[[i]] ])
+  if(! names(df_factor_levels[i]) == 'responded') {
+    df_train_rebal[i] <- levels(pull(df_factor_levels, i))[ df_train_rebal[i] %>% unlist()]
+  }
+}
+df_train_rebal_numeric <- df_train_rebal_numeric %>% 
+  mutate(profession = levels(df_factor_levels$profession)[profession]) %>%
+  mutate(marital = levels(df_factor_levels$marital)[marital]) %>% 
+  mutate(schooling = levels(df_factor_levels$schooling)[schooling]) %>% 
+  mutate(default = levels(df_factor_levels$profession)[profession]) %>% 
+  mutate(housing = levels(df_factor_levels$profession)[profession]) %>% 
+  mutate(loan = levels(df_factor_levels$profession)[profession]) %>% 
+  mutate(contact = levels(df_factor_levels$profession)[profession]) %>% 
+  mutate(month = levels(df_factor_levels$profession)[profession]) %>% 
+  mutate(day_of_week = levels(df_factor_levels$day_of_week)[profession]) %>% 
+  mutate(poutcome = levels(df_factor_levels$poutcome)[poutcome])
+
+
+```
+
+```{r}
+qqqq <- df_train %>% 
+  mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
+  mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge)) %>% 
+  mutate_if(is.character, as.factor)
+levels(qqqq$profession)[1]
+```
+
 
 # Random Forest
 ```{r}
@@ -278,15 +356,19 @@ qqq6 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, prox
 qqq6
 
 ```
-```{r}
+```{r fig.height=5, fig.width=5}
 library(ROCR)
+# https://rocr.bioinf.mpi-sb.mpg.de/
 
 pred <- prediction(as.data.frame(qqq6$votes)$yes, qqq6_imputed$responded)
 perf <- performance(pred, measure = "tpr", x.measure = "fpr")
 auc <- performance(pred, measure = "auc")
 # https://davidrroberts.wordpress.com/2015/09/22/quick-auc-function-in-r-with-rocr-package/
+xline <- c(0,1)
+yline <- xline
 plot(perf, colorize = T)
 text(1,0.15,labels=paste("AUC = ",round(auc@y.values[[1]],digits=3),sep=""),adj=1)
+lines(xline, yline, col = 'grey')
  
 ```
 
@@ -301,7 +383,7 @@ varImpPlot(qqq6,
 # Impute missing ages by median
 set.seed(77777)
 qqq7_imputed <- df_train_3 %>% mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge))
-set.seed(77777)
+set.seed(77778)
 qqq7 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(2000, 500))
 qqq7
