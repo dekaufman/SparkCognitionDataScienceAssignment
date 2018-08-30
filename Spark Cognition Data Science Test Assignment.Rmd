@@ -284,32 +284,11 @@ library(ROCR)
 pred <- prediction(as.data.frame(qqq6$votes)$yes, qqq6_imputed$responded)
 perf <- performance(pred, measure = "tpr", x.measure = "fpr")
 auc <- performance(pred, measure = "auc")
-auc@y.values[[1]]
-# plot(perf, col=rainbow(10))
+# https://davidrroberts.wordpress.com/2015/09/22/quick-auc-function-in-r-with-rocr-package/
 plot(perf, colorize = T)
 text(1,0.15,labels=paste("AUC = ",round(auc@y.values[[1]],digits=3),sep=""),adj=1)
  
-
-library(PRROC)
-roc <- roc.curve(scores.class0 = as.data.frame(qqq6$votes)$no, weights.class0 = qqq6_imputed$responded %>% as.numeric(), curve = TRUE)
-roc
-plot(roc)
-
 ```
-```{r}
-library(plotROC)
-
-qqq10 <- data.frame(D = qqq6_imputed$responded %>% as.numeric(),
-                    M1 = as.data.frame(qqq6$votes)$yes, stringsAsFactors = FALSE)
-
-basicplot <- ggplot(qqq10, aes(d = D, m = M1)) + geom_roc() + 
-  annotate("text", x = .75, y = .25, 
-           label = paste("AUC =", round(calc_auc(basicplot)$AUC, 2))) +
-basicplot
-
-calc_auc(basicplot)$AUC
-```
-
 
 ```{r}
 varImpPlot(qqq6,
