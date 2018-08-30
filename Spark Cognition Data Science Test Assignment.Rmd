@@ -247,12 +247,9 @@ if (results$best == 'ubNCL') {
   df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df() ) %>%
     rename(responded = value)
 } else if (results$best == 'ubSMOTE') {
-  # rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
-  #                         Y = as.factor(df_train_impute1$responded - 1),
-  #                         type = 'ubSMOTE', perc = 20)
   rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
                           Y = as.factor(df_train_impute1$responded - 1),
-                          type = 'ubOver', perc = 20)
+                          type = 'ubSMOTE', perc = 20)
   df_train_rebal <- bind_cols(rebal_result[['X']], (as.numeric(rebal_result[['Y']])) %>% tbl_df()) %>%
     rename(responded = value)
 } else {
