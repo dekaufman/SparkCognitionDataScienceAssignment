@@ -189,7 +189,7 @@ df_train_1 <- df_train %>%
 
 set.seed(11111)
 qqq1 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, na.action = na.omit)
-qqq1[['confusion']]
+qqq1
 ```
 
 ```{r}
@@ -204,7 +204,7 @@ varImpPlot(qqq1,
 set.seed(22222)
 qqq2 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(1000, 250))
-qqq2[['confusion']]
+qqq2
 
 ```
 
@@ -224,7 +224,7 @@ df_train_3 <- df_train %>% mutate_if(is.character, replace_na, replace = 'NA_tex
 set.seed(33333)
 qqq3 <- randomForest(responded ~ ., data = df_train_3, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(2000, 500))
-qqq3[['confusion']]
+qqq3
 
 ```
 
@@ -239,7 +239,7 @@ varImpPlot(qqq3,
 set.seed(44444)
 qqq4 <- randomForest(responded ~ ., data = df_train_3, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit)
-qqq4[['confusion']]
+qqq4
 
 ```
 
@@ -257,7 +257,7 @@ qqq5_imputed <- rfImpute(responded ~ ., df_train_1)
 set.seed(55556)
 qqq5 <- randomForest(responded ~ ., data = qqq5_imputed, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(2000, 500))
-qqq5[['confusion']]
+qqq5
 
 ```
 
@@ -275,9 +275,41 @@ qqq6_imputed <- rfImpute(responded ~ ., df_train_3)
 set.seed(66667)
 qqq6 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(2000, 500))
-qqq6[['confusion']]
+qqq6
 
 ```
+```{r}
+library(ROCR)
+
+pred <- prediction(as.data.frame(qqq6$votes)$yes, qqq6_imputed$responded)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc@y.values[[1]]
+# plot(perf, col=rainbow(10))
+plot(perf, colorize = T)
+text(1,0.15,labels=paste("AUC = ",round(auc@y.values[[1]],digits=3),sep=""),adj=1)
+ 
+
+library(PRROC)
+roc <- roc.curve(scores.class0 = as.data.frame(qqq6$votes)$no, weights.class0 = qqq6_imputed$responded %>% as.numeric(), curve = TRUE)
+roc
+plot(roc)
+
+```
+```{r}
+library(plotROC)
+
+qqq10 <- data.frame(D = qqq6_imputed$responded %>% as.numeric(),
+                    M1 = as.data.frame(qqq6$votes)$yes, stringsAsFactors = FALSE)
+
+basicplot <- ggplot(qqq10, aes(d = D, m = M1)) + geom_roc() + 
+  annotate("text", x = .75, y = .25, 
+           label = paste("AUC =", round(calc_auc(basicplot)$AUC, 2))) +
+basicplot
+
+calc_auc(basicplot)$AUC
+```
+
 
 ```{r}
 varImpPlot(qqq6,
@@ -293,7 +325,7 @@ qqq7_imputed <- df_train_3 %>% mutate(custAge = ifelse(is.na(custAge), median(cu
 set.seed(77777)
 qqq7 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, proximity = TRUE, 
                      na.action = na.omit, sampsize = c(2000, 500))
-qqq7[['confusion']]
+qqq7
 
 ```
 
