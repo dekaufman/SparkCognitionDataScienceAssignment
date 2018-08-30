@@ -5,12 +5,16 @@ output: html_notebook
 
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
-library(gridExtra)
+library(gridExtra)        # Combine multiple graphs
 library(knitr)
-library(kableExtra)
+library(kableExtra)       # Table print formatting
+library(GGally)           # Correlation plot using ggplot2
+library(GoodmanKruskal)   # Categorical variable influence relationships
+library(caTools)          # Training-validation split
 library(randomForest)
 
 setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitionDataScienceAssignment')
+source('helper functions.R')
 ```
 
 ### Ingest training data and report dimensions
@@ -33,12 +37,14 @@ df_train_categ <- df_train_orig %>% select_if(is.character)
 # Make tidy
 df_cat_tidy <- df_train_categ %>% 
   gather('feature', 'value', 1:11)
+
 # Count values
 df_cat_dists <- df_cat_tidy %>% 
   group_by(feature, value) %>% 
   summarise(count = n()) %>% 
   ungroup() %>% 
   arrange(feature, desc(count))
+
 # Compute distributions
 df_cat_dists <- df_cat_dists %>% 
   group_by(feature) %>% 
@@ -69,7 +75,7 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 
 ### Descriptive stats for numerical variables
 ```{r warning=FALSE, rows.print = 25, results = 'asis'}
-# Source:  https://stackoverflow.com/a/34594642
+# Per https://stackoverflow.com/a/34594642
 
 # Compute quantiles, etc.
 df_train_numer_stats <- df_train_numeric %>%
@@ -95,13 +101,12 @@ df_train_numer_stats <- df_train_numer_stats %>%
   spread(stat, val) %>%
   select(var, min, q25, median, q75, max, mean, sd, numNA) # reorder columns
 
-# Pretty table printing; cf. http://haozhu233.github.io/kableExtra/awesome_table_in_html.html
+# Formatting per http://haozhu233.github.io/kableExtra/awesome_table_in_html.html
 kable(as.data.frame(df_train_numer_stats), digits = c(0, 1, 1, 1, 1, 1, 1, 1, 0)) %>% kable_styling()
 ```
 
 ### Visualize numerical variables:  violin plots, marked with quartiles
 ```{r fig.width=10, fig.height=10}
-
 df_numer_tidy <- df_train_numeric %>% gather('feature', 'value')
 
 fn_make_violin <- function(var_name, data_frame) {
@@ -119,27 +124,21 @@ l_histograms <- lapply(colnames(df_train_numeric), fn_make_violin, data_frame = 
 grid.arrange(grobs = l_histograms, nrow = 4)
 ```
 
-TODO:  multivariate visualizations, correlations
-
 ## Multivariate descriptive statistics and correlations
 ```{r warning=FALSE,  fig.width=10, fig.height=10}
-library(GGally)
-
 ggpairs(df_train_numeric)
-
 ```
 
 ```{r fig.width=10, fig.height=10}
-# https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
-  
-library(GoodmanKruskal)
-
+# Per https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
 GKmatrix <- GKtauDataframe(as.data.frame(df_train_categ))
 plot(GKmatrix, corrColors = "blue")
 ```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
+# Chi-square evaluation of bivariate categorical feature association, per 
 # https://stackoverflow.com/a/32748027
+# Setting chunk header to suppress this; didn't turn out to be interesting
 chisqmatrix <- function(x) {
   names = colnames(x);  num = length(names)
   m = matrix(nrow=num,ncol=num,dimnames=list(names,names))
@@ -156,23 +155,17 @@ kable(mat, digits = rep(4, 11)) %>% kable_styling()
 
 ```
 
-```{r}
-library(graphics)
-table(df_train_categ$day_of_week, df_train_categ$profession) %>% mosaicplot()
-```
-
 # Removing abnormal records and undesired features
 From the data exploration above, we draw the following conclusions:
 * Features `pdays` and `pmonths` are effectively the same (correlation = 1, unsurprisingly given their definitions), so we will remove `pmonths`.
-* There's a strong correlation among `euribor.3m`, `cons price idx`, and `nr.employed`.  Additionally, `nr.employed` has a small standard deviation relative to its mean, which in the modeler's judgment is unlikely to be meaningful in prediction.  Therefore, this feature will be removed.
-* The categorical values that occur most rarely in their particular features (`default = 'yes'`, `marital = 'unknown'`, and `schooling == 'illiterate') are too unbalanced to generate reliable predictive impact, and will also tend to cause R library errors if they occur in the validation set but not the training set.  Therefore, the very small number of affected rows will be discarded.
+* There's a strong correlation among `euribor.3m`, `cons price idx`, and `nr.employed`.  Additionally, `nr.employed` has a small standard deviation relative to its mean.  Modeler's judgment: `nr.employed` is unlikely to be meaningful in prediction and will be removed.
+* The categorical values that occur most rarely in their particular features (`default = 'yes'`, `marital = 'unknown'`, and `schooling == 'illiterate') are too unbalanced to generate reliable predictive impact, and will also tend to cause R library errors if they occur in the validation set but not the training set.  Therefore, the 10 affected rows will be discarded.
 ```{r}
 df_train_orig <- df_train_orig %>% 
   select(-pmonths, -nr.employed) %>% 
   filter(default != 'yes' & marital != 'unknown' & 
            (schooling != 'illiterate' | is.na(schooling)))
 ```
-
 
 ## Extent of missing data
 Count NAs per column, listing only the columns that have at least one NA.
@@ -194,12 +187,13 @@ table(df_NA_per_row)
 
 ```
 
-Conclusion:  nearly half the records contain at least one NA, so discarding incomplete records would be an extreme measure likely to bias the predictive model severely.  We will pursue other approaches.
+Conclusion:  nearly half the records contain at least one NA, so discarding incomplete records would be an extreme measure likely to weaken and/or bias the predictive model significantly.
+
+Instead, we will treat the missing categorical data as a distinct category `'NA_text'` and use an imputation library routine to impute values for the `custAge` numerical feature.
 
 # Split the data
 Although the actual test data for this problem is found in a separate file, we also need to split the data for purposes of model selection.  We will split the "training" data into 70% for actual training and 30% for validation.
 ```{r}
-library(caTools)
 set.seed(101)
 sample = sample.split(df_train_orig$responded, SplitRatio = 0.7)
 df_train <- subset(df_train_orig, sample == TRUE)
@@ -208,6 +202,7 @@ df_validation <- subset(df_train_orig, sample == FALSE)
 ```
 
 # Balance the sample
+We explore the `unbalanced` library which offers a collection of methods to oversample, undersample, or generate synthetic records and a function `ubRacing()` to recommend a method.
 ```{r}
 library(unbalanced)
 set.seed(875)
@@ -228,25 +223,23 @@ df_factor_levels <- df_train_impute1 %>% slice(1)
 # Convert factors to numeric (required by 'unbalanced' package)  
 df_train_impute1 <- df_train_impute1 %>% mutate_if(is.factor, as.numeric)
 
-# results <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(), 
-#                     "randomForest", positive = 2, ubConf=ubConf, ntree=50)
-# print(results$best)
+rebalancing_exploration <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(),
+                    "randomForest", positive = 2, ubConf=ubConf, ntree=50)
 ```
 
+As this analysis evolved, `ubRacing()` generally recommended either SMOTE or NCL as the rebalancing method best suited to the training data.  SMOTE turns out to favor the positive results class more strongly, which (in the modeler's judgment) is better suited to this problem.  This may yield a lesser overall accuracy, but it seems to do a better job with with sensitivity (avoiding false negatives), which is probably a major objective for this business operation.
 ```{r}
-# Manual override:  Even when `ubracing` picks ubNCL, I judge that the ubSMOTE results 
-# are more interesting and more what I want from the model with regard to emphasizing 
-# the positive response class and reducing false negatives
-results$best = 'ubSMOTE'
+# Manual override (modeler's judgment)
+rebalancing_exploration$best = 'ubSMOTE'
 
-if (results$best == 'ubNCL') {
+if (rebalancing_exploration$best == 'ubNCL') {
   # Subtract one from response because this library requires (0,1) response vars
   rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded),
                           Y = df_train_impute1$responded - 1)
   # Add 1 to undo previous conversion of response var
   df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df() ) %>%
     rename(responded = value)
-} else if (results$best == 'ubSMOTE') {
+} else if (rebalancing_exploration$best == 'ubSMOTE') {
   rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
                           Y = as.factor(df_train_impute1$responded - 1),
                           type = 'ubSMOTE', perc = 20)
@@ -265,29 +258,38 @@ for (i in l_factor_indices) {
   df_train_rebal[i] <- levels(pull(df_factor_levels, i))[ df_train_rebal[i] %>% unlist()]
   # }
 }
+print('Response counts in training data after rebalancing:')
 table(df_train_rebal$responded)
 
 ```
 
 
-# Random Forest
+# Random Forest model fitting and evaluation
+To get a sense of the impact of our data cleaning process, we begin by applying a Random Forest to the dataset after eliminating unwanted features and records, but before replacing missing data and rebalancing.  The model-fitting function invoked with the instruction to ignore records with missing data, which considerably reduces the sample size.
 ```{r}
 df_train_0 <- df_train %>% 
   mutate_if(is.character, as.factor) 
 
 set.seed(101)
-(qqq0 <- randomForest(responded ~ ., data = df_train_0, importance = TRUE, proximity = TRUE, na.action = na.omit))
+(
+  model_RF_origdata <- randomForest(responded ~ ., data = df_train_0, 
+                                    importance = TRUE, proximity = TRUE, 
+                                    na.action = na.omit)
+)
 ```
+
+We also fit a model with missing data replaced but still without rebalancing.
+
 ```{r}
 # Not rebalanced, but with NAs removed
 df_train_00 <- df_train %>% 
   mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
   mutate_if(is.character, as.factor) 
-df_train_00 <- rfImpute(responded ~ ., df_train_00)
+df_train_00 <- rfImpute(responded ~ ., df_train_00, tree = 50)
 
 set.seed(1010)
 (
-  qqq00 <- randomForest(x = df_train_00 %>% select(-responded), 
+  model_RF_origdata <- randomForest(x = df_train_00 %>% select(-responded), 
                        y = df_train_00 %>% pull(responded), 
                        xtest = df_validation_imputed %>% select(-responded), 
                        ytest = df_validation_imputed %>% pull(responded), 
@@ -299,11 +301,11 @@ set.seed(1010)
 
 
 ```{r}
-varImpPlot(qqq00,
+varImpPlot(model_RF_origdata,
            sort = T,
            main="Variable Importance",
            n.var=15)
-fn_ROC_AUC((qqq00$test$votes %>% as.data.frame())$yes, df_validation_imputed$responded)
+fn_ROC_AUC((model_RF_origdata$test$votes %>% as.data.frame())$yes, df_validation_imputed$responded)
 ```
 
 ```{r}
@@ -334,126 +336,6 @@ fn_ROC_AUC((qqq1$test$votes %>% as.data.frame())$yes, df_validation_imputed$resp
 
 ```
 
-```{r}
-# Stratify
-set.seed(22222)
-qqq2 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit, sampsize = c(1000, 250))
-qqq2
-
-```
-
-```{r}
-varImpPlot(qqq2,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
-
-```{r}
-# Avoid some NAs
-df_train_3 <- df_train %>% mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
-  mutate_if(is.character, as.factor) 
-
-# Stratify
-set.seed(33333)
-qqq3 <- randomForest(responded ~ ., data = df_train_3, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit, sampsize = c(2000, 500))
-qqq3
-
-```
-
-```{r}
-varImpPlot(qqq3,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
-
-```{r}
-set.seed(44444)
-qqq4 <- randomForest(responded ~ ., data = df_train_3, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit)
-qqq4
-
-```
-
-```{r}
-varImpPlot(qqq4,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
-
-```{r eval=FALSE, include=FALSE}
-# Impute any values missing in original data set
-set.seed(55555)
-qqq5_imputed <- rfImpute(responded ~ ., df_train_1)
-set.seed(55556)
-qqq5 <- randomForest(responded ~ ., data = qqq5_imputed, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit, sampsize = c(2000, 500))
-qqq5
-
-```
-
-```{r}
-varImpPlot(qqq5,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
-
-```{r}
-# Impute any values missing in original data set
-set.seed(66666)
-qqq6_imputed <- rfImpute(responded ~ ., df_train_3)
-set.seed(66667)
-qqq6 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit, sampsize = c(2000, 500))
-qqq6
-
-```
-
-```{r fig.height=5, fig.width=5}
-library(ROCR)
-# https://rocr.bioinf.mpi-sb.mpg.de/
-
-pred <- prediction(as.data.frame(qqq6$votes)$yes, qqq6_imputed$responded)
-perf <- performance(pred, measure = "tpr", x.measure = "fpr")
-auc <- performance(pred, measure = "auc")
-# https://davidrroberts.wordpress.com/2015/09/22/quick-auc-function-in-r-with-rocr-package/
-xline <- c(0,1)
-yline <- xline
-plot(perf, colorize = T)
-text(1,0.15,labels=paste("AUC = ",round(auc@y.values[[1]],digits=3),sep=""),adj=1)
-lines(xline, yline, col = 'grey')
- 
-```
-
-```{r}
-varImpPlot(qqq6,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
-
-```{r}
-# Impute missing ages by median
-set.seed(77777)
-qqq7_imputed <- df_train_3 %>% mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge))
-set.seed(77778)
-qqq7 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, proximity = TRUE, 
-                     na.action = na.omit, sampsize = c(2000, 500))
-qqq7
-
-```
-
-```{r}
-varImpPlot(qqq7,
-           sort = T,
-           main="Variable Importance",
-           n.var=15)
-```
 
 
 
