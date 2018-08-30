@@ -225,27 +225,13 @@ rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded),
 l_factor_names <- df_factor_levels %>% select_if(is.factor) %>% names() 
 l_factor_indices <- which(names(df_factor_levels) %in% l_factor_names)
 
-# Convert numeric factor levels back to actual factor data
-df_train_rebal <- rebal_result[['X']]
+# Convert numeric factor levels back to actual factor data; add 1 to undo previous conversion of response var
+df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df()) %>% 
+  rename(responded = value)
 for (i in l_factor_indices) {
-  # df_train_rebal <- df_train_rebal %>%
-  #   mutate(.[[i]] = levels(pull(df_factor_levels, i))[ .[[i]] ])
-  if(! names(df_factor_levels[i]) == 'responded') {
-    df_train_rebal[i] <- levels(pull(df_factor_levels, i))[ df_train_rebal[i] %>% unlist()]
-  }
+  df_train_rebal[i] <- levels(pull(df_factor_levels, i))[ df_train_rebal[i] %>% unlist()]
+  # }
 }
-df_train_rebal_numeric <- df_train_rebal_numeric %>% 
-  mutate(profession = levels(df_factor_levels$profession)[profession]) %>%
-  mutate(marital = levels(df_factor_levels$marital)[marital]) %>% 
-  mutate(schooling = levels(df_factor_levels$schooling)[schooling]) %>% 
-  mutate(default = levels(df_factor_levels$profession)[profession]) %>% 
-  mutate(housing = levels(df_factor_levels$profession)[profession]) %>% 
-  mutate(loan = levels(df_factor_levels$profession)[profession]) %>% 
-  mutate(contact = levels(df_factor_levels$profession)[profession]) %>% 
-  mutate(month = levels(df_factor_levels$profession)[profession]) %>% 
-  mutate(day_of_week = levels(df_factor_levels$day_of_week)[profession]) %>% 
-  mutate(poutcome = levels(df_factor_levels$poutcome)[poutcome])
-
 
 ```
 
