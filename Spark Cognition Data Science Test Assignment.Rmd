@@ -116,6 +116,48 @@ grid.arrange(grobs = l_histograms, nrow = 4)
 
 TODO:  multivariate visualizations, correlations
 
+## Multivariate descriptive statistics and correlations
+```{r warning=FALSE,  fig.width=10, fig.height=10}
+library(GGally)
+
+ggpairs(df_train_numeric)
+
+```
+
+```{r fig.width=10, fig.height=10}
+# https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
+  
+library(GoodmanKruskal)
+
+GKmatrix <- GKtauDataframe(as.data.frame(df_train_categ))
+plot(GKmatrix, corrColors = "blue")
+```
+
+```{r}
+# https://stackoverflow.com/a/32748027
+chisqmatrix <- function(x) {
+  names = colnames(x);  num = length(names)
+  m = matrix(nrow=num,ncol=num,dimnames=list(names,names))
+  for (i in 1:(num-1)) {
+    for (j in (i+1):num) {
+      # https://stackoverflow.com/a/4740272 for unlist() fix
+      m[i,j] = chisq.test(unlist(x[,i]),unlist(x[,j]))$p.value
+    }
+  }
+  return (m)
+}
+mat <-  chisqmatrix(df_train_categ) %>% tbl_df()
+kable(mat, digits = rep(4, 11)) %>% kable_styling()
+
+```
+
+```{r}
+library(graphics)
+table(df_train_categ$day_of_week, df_train_categ$profession) %>% mosaicplot()
+```
+
+
+
 ## Extent of missing data
 Count NAs per column, listing only the columns that have at least one NA.
 ```{r}
