@@ -217,8 +217,10 @@ ubConf <- list(percOver=200, percUnder=200, k=2, perc=50, method="percPos", w=NU
 # Prepare dataset in form required by 'unbalanced' package -- preliminary replacement of missing data
 df_train_impute1 <- df_train %>% 
   mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
-  mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge)) %>% 
+  mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge)) %>%
   mutate_if(is.character, as.factor)
+
+# df_train_impute1 <- rfImpute(responded ~ ., df_train_impute1, ntree = 50)
 
 # Save factor level definitions
 df_factor_levels <- df_train_impute1 %>% slice(1)
@@ -226,25 +228,31 @@ df_factor_levels <- df_train_impute1 %>% slice(1)
 # Convert factors to numeric (required by 'unbalanced' package)  
 df_train_impute1 <- df_train_impute1 %>% mutate_if(is.factor, as.numeric)
 
-results <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(), 
-                    "randomForest", positive = 2, ubConf=ubConf, ntree=50)
-print(results$best)
+# results <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(), 
+#                     "randomForest", positive = 2, ubConf=ubConf, ntree=50)
+# print(results$best)
 ```
 
 ```{r}
-# if (results$best == 'ubNCL') {
-if (0) {
+# Manual override:  Even when `ubracing` picks ubNCL, I judge that the ubSMOTE results 
+# are more interesting and more what I want from the model with regard to emphasizing 
+# the positive response class and reducing false negatives
+results$best = 'ubSMOTE'
+
+if (results$best == 'ubNCL') {
   # Subtract one from response because this library requires (0,1) response vars
   rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded),
                           Y = df_train_impute1$responded - 1)
   # Add 1 to undo previous conversion of response var
   df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df() ) %>%
     rename(responded = value)
-# } else if (results$best == 'ubSMOTE') {
-} else if (1) {
+} else if (results$best == 'ubSMOTE') {
+  # rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
+  #                         Y = as.factor(df_train_impute1$responded - 1),
+  #                         type = 'ubSMOTE', perc = 20)
   rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
                           Y = as.factor(df_train_impute1$responded - 1),
-                          type = 'ubSMOTE', perc = 20)
+                          type = 'ubOver', perc = 20)
   df_train_rebal <- bind_cols(rebal_result[['X']], (as.numeric(rebal_result[['Y']])) %>% tbl_df()) %>%
     rename(responded = value)
 } else {
@@ -253,7 +261,7 @@ if (0) {
 
 # Get column indices of categorical factors
 l_factor_names <- df_factor_levels %>% select_if(is.factor) %>% names() 
-l_factor_indices <- which(names(df_factor_levels) %in% l_factor_names)
+l_factor_indices <- which(names(df_train_rebal) %in% l_factor_names)
 
 # Convert numeric factor levels back to actual factor data
 for (i in l_factor_indices) {
@@ -261,6 +269,7 @@ for (i in l_factor_indices) {
   # }
 }
 table(df_train_rebal$responded)
+
 ```
 
 
@@ -280,7 +289,6 @@ df_train_00 <- df_train %>%
 df_train_00 <- rfImpute(responded ~ ., df_train_00)
 
 set.seed(1010)
-# (qqq00 <- randomForest(responded ~ ., data = df_train_00, importance = TRUE, proximity = TRUE))
 (
   qqq00 <- randomForest(x = df_train_00 %>% select(-responded), 
                        y = df_train_00 %>% pull(responded), 
@@ -306,7 +314,7 @@ df_train_1 <- df_train_rebal %>%
   mutate_if(is.character, as.factor) 
 
 set.seed(11111)
-# qqq1 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, na.action = na.omit)
+# qqq1 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, na.action = na.fail)
 # qqq1
 (
   qqq1 <- randomForest(x = df_train_1 %>% select(-responded), 
