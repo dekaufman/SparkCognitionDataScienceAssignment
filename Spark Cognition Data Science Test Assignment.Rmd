@@ -8,6 +8,8 @@ library(tidyverse)
 library(gridExtra)
 library(knitr)
 library(kableExtra)
+library(randomForest)
+
 setwd('C:/Users/David/Documents/Me/Energy/Jobs/2018/SparkCognition/SparkCognitionDataScienceAssignment')
 ```
 
@@ -159,6 +161,17 @@ library(graphics)
 table(df_train_categ$day_of_week, df_train_categ$profession) %>% mosaicplot()
 ```
 
+# Removing abnormal records and undesired features
+From the data exploration above, we draw the following conclusions:
+* Features `pdays` and `pmonths` are effectively the same (correlation = 1, unsurprisingly given their definitions), so we will remove `pmonths`.
+* There's a strong correlation among `euribor.3m`, `cons price idx`, and `nr.employed`.  Additionally, `nr.employed` has a small standard deviation relative to its mean, which in the modeler's judgment is unlikely to be meaningful in prediction.  Therefore, this feature will be removed.
+* The categorical values that occur most rarely in their particular features (`default = 'yes'`, `marital = 'unknown'`, and `schooling == 'illiterate') are too unbalanced to generate reliable predictive impact, and will also tend to cause R library errors if they occur in the validation set but not the training set.  Therefore, the very small number of affected rows will be discarded.
+```{r}
+df_train_orig <- df_train_orig %>% 
+  select(-pmonths, -nr.employed) %>% 
+  filter(default != 'yes' & marital != 'unknown' & 
+           (schooling != 'illiterate' | is.na(schooling)))
+```
 
 
 ## Extent of missing data
@@ -197,7 +210,7 @@ df_validation <- subset(df_train_orig, sample == FALSE)
 # Balance the sample
 ```{r}
 library(unbalanced)
-
+set.seed(875)
 #configure sampling parameters
 ubConf <- list(percOver=200, percUnder=200, k=2, perc=50, method="percPos", w=NULL)
 
@@ -215,45 +228,96 @@ df_train_impute1 <- df_train_impute1 %>% mutate_if(is.factor, as.numeric)
 
 results <- ubRacing(responded ~., df_train_impute1 %>% as.data.frame(), 
                     "randomForest", positive = 2, ubConf=ubConf, ntree=50)
-print(results)
+print(results$best)
+```
 
-# Subtract one from response because this library requires (0,1) response vars
-rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded), 
-                        Y = df_train_impute1$responded - 1)
+```{r}
+# if (results$best == 'ubNCL') {
+if (0) {
+  # Subtract one from response because this library requires (0,1) response vars
+  rebal_result <- ubNCL(X = df_train_impute1 %>% select(-responded),
+                          Y = df_train_impute1$responded - 1)
+  # Add 1 to undo previous conversion of response var
+  df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df() ) %>%
+    rename(responded = value)
+# } else if (results$best == 'ubSMOTE') {
+} else if (1) {
+  rebal_result <- ubBalance(X = df_train_impute1 %>% select(-responded),
+                          Y = as.factor(df_train_impute1$responded - 1),
+                          type = 'ubSMOTE', perc = 20)
+  df_train_rebal <- bind_cols(rebal_result[['X']], (as.numeric(rebal_result[['Y']])) %>% tbl_df()) %>%
+    rename(responded = value)
+} else {
+  stop('Unimplemented unbalancing method')
+}
 
 # Get column indices of categorical factors
 l_factor_names <- df_factor_levels %>% select_if(is.factor) %>% names() 
 l_factor_indices <- which(names(df_factor_levels) %in% l_factor_names)
 
-# Convert numeric factor levels back to actual factor data; add 1 to undo previous conversion of response var
-df_train_rebal <- bind_cols(rebal_result[['X']], (rebal_result[['Y']] + 1) %>% tbl_df()) %>% 
-  rename(responded = value)
+# Convert numeric factor levels back to actual factor data
 for (i in l_factor_indices) {
   df_train_rebal[i] <- levels(pull(df_factor_levels, i))[ df_train_rebal[i] %>% unlist()]
   # }
 }
-
-```
-
-```{r}
-qqqq <- df_train %>% 
-  mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
-  mutate(custAge = ifelse(is.na(custAge), median(custAge, na.rm = TRUE), custAge)) %>% 
-  mutate_if(is.character, as.factor)
-levels(qqqq$profession)[1]
+table(df_train_rebal$responded)
 ```
 
 
 # Random Forest
 ```{r}
-library(randomForest)
+df_train_0 <- df_train %>% 
+  mutate_if(is.character, as.factor) 
 
-df_train_1 <- df_train %>% 
+set.seed(101)
+(qqq0 <- randomForest(responded ~ ., data = df_train_0, importance = TRUE, proximity = TRUE, na.action = na.omit))
+```
+```{r}
+# Not rebalanced, but with NAs removed
+df_train_00 <- df_train %>% 
+  mutate_if(is.character, replace_na, replace = 'NA_text') %>% 
+  mutate_if(is.character, as.factor) 
+df_train_00 <- rfImpute(responded ~ ., df_train_00)
+
+set.seed(1010)
+# (qqq00 <- randomForest(responded ~ ., data = df_train_00, importance = TRUE, proximity = TRUE))
+(
+  qqq00 <- randomForest(x = df_train_00 %>% select(-responded), 
+                       y = df_train_00 %>% pull(responded), 
+                       xtest = df_validation_imputed %>% select(-responded), 
+                       ytest = df_validation_imputed %>% pull(responded), 
+                       importance = TRUE, 
+                       proximity = TRUE,
+                       ntree = 100)
+)
+```
+
+
+```{r}
+varImpPlot(qqq00,
+           sort = T,
+           main="Variable Importance",
+           n.var=15)
+fn_ROC_AUC((qqq00$test$votes %>% as.data.frame())$yes, df_validation_imputed$responded)
+```
+
+```{r}
+df_train_1 <- df_train_rebal %>% 
   mutate_if(is.character, as.factor) 
 
 set.seed(11111)
-qqq1 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, na.action = na.omit)
-qqq1
+# qqq1 <- randomForest(responded ~ ., data = df_train_1, importance = TRUE, proximity = TRUE, na.action = na.omit)
+# qqq1
+(
+  qqq1 <- randomForest(x = df_train_1 %>% select(-responded), 
+                       y = df_train_1 %>% pull(responded), 
+                       xtest = df_validation_imputed %>% select(-responded), 
+                       ytest = df_validation_imputed %>% pull(responded), 
+                       importance = TRUE, 
+                       proximity = TRUE,
+                       ntree = 100)
+)
+
 ```
 
 ```{r}
@@ -261,6 +325,8 @@ varImpPlot(qqq1,
            sort = T,
            main="Variable Importance",
            n.var=15)
+fn_ROC_AUC((qqq1$test$votes %>% as.data.frame())$yes, df_validation_imputed$responded)
+
 ```
 
 ```{r}
@@ -342,6 +408,7 @@ qqq6 <- randomForest(responded ~ ., data = qqq6_imputed, importance = TRUE, prox
 qqq6
 
 ```
+
 ```{r fig.height=5, fig.width=5}
 library(ROCR)
 # https://rocr.bioinf.mpi-sb.mpg.de/
